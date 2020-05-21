@@ -5,6 +5,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <sstream>
 #include <cmath>
 
 using namespace cv;
@@ -52,7 +53,12 @@ int main ( int argc, char **argv )
 	Mat gray(image.size(), CV_MAKETYPE(image.depth(), 1));			// To hold Grayscale Image
 	Mat edges(image.size(), CV_MAKETYPE(image.depth(), 1));			// To hold Grayscale Image
 	Mat traces(image.size(), CV_8UC3);								// For Debug Visuals
-	Mat qr,qr_raw,qr_gray,qr_thres;
+
+	// circle mask
+	Mat mask(image.size(), CV_8UC1);
+	Mat maskOut(image.size(), CV_8UC3);
+
+	Mat qr,qr_raw,qr_gray,qr_thres, circ_view;
 	    
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
@@ -73,7 +79,12 @@ int main ( int argc, char **argv )
 		qr_raw = Mat::zeros(100, 100, CV_8UC3 );
 	   	qr = Mat::zeros(100, 100, CV_8UC3 );
 		qr_gray = Mat::zeros(100, 100, CV_8UC1);
-	   	qr_thres = Mat::zeros(100, 100, CV_8UC1);		
+	   	qr_thres = Mat::zeros(100, 100, CV_8UC1);
+
+		circ_view = Mat::zeros(100, 100, CV_8UC3);
+
+		mask = Scalar(0,0,0);
+		maskOut = Scalar(0,0,0);
 		
 		capture >> image;						// Capture Image from Image Input
 
@@ -192,11 +203,85 @@ int main ( int argc, char **argv )
 				right = median2;
 				orientation = CV_QR_WEST;
 			}
+
 	
+			putText(traces, "1", mc[right], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			putText(traces, "2", mc[bottom], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
 			
 			// To ensure any unintended values do not sneak up when QR code is not present
 			float area_top,area_right, area_bottom;
 			
+			// Added
+				drawContours( image, contours, top , Scalar(255,200,0), 2, 8, hierarchy, 0 );
+				drawContours( image, contours, right , Scalar(0,0,255), 2, 8, hierarchy, 0 );
+				drawContours( image, contours, bottom , Scalar(255,0,100), 2, 8, hierarchy, 0 );
+
+
+			// Enclosing circle
+			Point2f mid = (mc[median1] + mc[median2]) * 0.5;
+			float ccrad = (float)norm(mc[median1] - mc[median2]) / 2 * 1.3;
+			circle(traces, mid, ccrad, Scalar(100,100,200), 3, 8, 0);
+
+			circle(mask, mid, ccrad, Scalar(255,255,255), -1);
+			bitwise_and(image, image, maskOut, mask);
+
+			Mat cropped;
+			cropped = Scalar(0,0,0);
+
+			// Get slope of hypotenus mid to outlier point
+			float slope2 = cv_lineSlope(mid, mc[outlier], align);
+
+			ostringstream buf, buf2, buf3;
+			buf << "Slope: " << slope;
+			buf << " | Dist: " << dist;
+			putText(traces, buf.str(), Point(20,45), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+
+			float ocalc, cdy, cdx;
+
+			// TODO check for cdx == 0
+			cdy = mid.y - mc[outlier].y;
+			cdx = mid.x - mc[outlier].x;
+
+			ocalc = cdy / cdx;
+
+			buf2 << "Outlier slope: " << slope2;
+			buf2 << " | Outlier calc: " << cdy;
+			putText(traces, buf2.str(), Point(20,60), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+
+			buf3 << "Outline point: (" << mc[outlier].x << ", " << mc[outlier].y << ")";
+			buf3 << " | Midpoint: (" << mid.x << ", " << mid.y << ")";
+			putText(traces, buf3.str(), Point(20,75), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+
+			circle(traces, mid, 5, Scalar(0,0,255), -1);
+
+			// if (slope < 0 && dist < 0) {
+				// putText(traces, "1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+				// putText(traces, "2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// } else if (slope < 0 && dist > 0) {
+				// putText(traces, "1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+				// putText(traces, "2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// } else if (slope > 0 && dist < 0) {
+				// putText(traces, "1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+				// putText(traces, "2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// } else {
+				// putText(traces, "2", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+				// putText(traces, "1", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// }
+
+			if (mid.x - ccrad >= 0 && mid.y - ccrad >= 0) {
+				Rect r_crop(mid.x - ccrad, mid.y - ccrad, ccrad * 2, ccrad * 2);
+				Mat cropped_ref(maskOut, r_crop);
+				cropped_ref.copyTo(cropped);
+				imshow ( "Cropped", cropped );
+			}
+
+			// TODO:
+			// - Get the four corners of the circle image
+			// - calculate warping matrix with perspectiveTransform
+			//   - args: corners vector (ordred by their control order),
+			// 			 ideal corners
+
+
 			if( top < contours.size() && right < contours.size() && bottom < contours.size() && contourArea(contours[top]) > 10 && contourArea(contours[right]) > 10 && contourArea(contours[bottom]) > 10 )
 			{
 
@@ -243,9 +328,9 @@ int main ( int argc, char **argv )
 				}
 	
 				//Draw contours on the image
-				drawContours( image, contours, top , Scalar(255,200,0), 2, 8, hierarchy, 0 );
-				drawContours( image, contours, right , Scalar(0,0,255), 2, 8, hierarchy, 0 );
-				drawContours( image, contours, bottom , Scalar(255,0,100), 2, 8, hierarchy, 0 );
+				// drawContours( image, contours, top , Scalar(255,200,0), 2, 8, hierarchy, 0 );
+				// drawContours( image, contours, right , Scalar(0,0,255), 2, 8, hierarchy, 0 );
+				// drawContours( image, contours, bottom , Scalar(255,0,100), 2, 8, hierarchy, 0 );
 
 				// Insert Debug instructions here
 				if(DBG==1)
@@ -284,6 +369,11 @@ int main ( int argc, char **argv )
 					// Draw the lines used for estimating the 4th Corner of QR Code
 					line(traces,M[1],N,Scalar(0,0,255),1,8,0);
 					line(traces,O[3],N,Scalar(0,0,255),1,8,0);
+					
+					// Draw triangle
+					line(traces, mc[A], mc[B], Scalar(100, 100, 100), 1, 8, 0);
+					line(traces, mc[B], mc[C], Scalar(100, 100, 100), 1, 8, 0);
+					line(traces, mc[C], mc[A], Scalar(100, 100, 100), 1, 8, 0);
 
 
 					// Show the Orientation of the QR Code wrt to 2D Image Space
@@ -315,6 +405,7 @@ int main ( int argc, char **argv )
 		imshow ( "Image", image );
 		imshow ( "Traces", traces );
 		imshow ( "QR code", qr_thres );
+		// imshow ( "Masked", maskOut );
 
 		key = waitKey(1);	// OPENCV: wait for 1ms before accessing next frame
 
