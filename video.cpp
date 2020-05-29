@@ -8,6 +8,8 @@
 #include <sstream>
 #include <cmath>
 
+#define PI 3.14159265358979323846
+
 using namespace cv;
 using namespace std;
 
@@ -15,6 +17,8 @@ const int CV_QR_NORTH = 0;
 const int CV_QR_EAST = 1;
 const int CV_QR_SOUTH = 2;
 const int CV_QR_WEST = 3;
+
+const double RESIZE_FACTOR = 0.4;
 
 float cv_distance(Point2f P, Point2f Q);					// Get Distance between two points
 float cv_lineEquation(Point2f L, Point2f M, Point2f J);		// Perpendicular Distance of a Point J from line formed by Points L and M; Solution to equation of the line Val = ax+by+c 
@@ -30,10 +34,10 @@ float cross(Point2f v1,Point2f v2);
 int main ( int argc, char **argv )
 {
 
-	VideoCapture capture(0);
+	VideoCapture capture(1);
 
 	//Mat image = imread(argv[1]);
-	Mat image;
+	Mat image_orig;
 
 	if(!capture.isOpened()) { cerr << " ERR: Unable find input Video source." << endl;
 		return -1;
@@ -43,11 +47,14 @@ int main ( int argc, char **argv )
 	//Info	: Inbuilt functions from OpenCV
 	//Note	: 
 	
- 	capture >> image;
-	if(image.empty()){ cerr << "ERR: Unable to query image from capture device.\n" << endl;
+ 	capture >> image_orig;
+	if(image_orig.empty()){ cerr << "ERR: Unable to query image from capture device.\n" << endl;
 		return -1;
 	}
 	
+	Mat image;
+
+	resize(image_orig, image, Size(), RESIZE_FACTOR, RESIZE_FACTOR);
 
 	// Creation of Intermediate 'Image' Objects required later
 	Mat gray(image.size(), CV_MAKETYPE(image.depth(), 1));			// To hold Grayscale Image
@@ -59,10 +66,16 @@ int main ( int argc, char **argv )
 	Mat maskOut(image.size(), CV_8UC3);
 
 	Mat qr,qr_raw,qr_gray,qr_thres, circ_view;
+
+	Mat warp_raw, warp_gr;
+
+	int pix_val;
 	    
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
 	vector<Point> pointsseq;    //used to save the approximated sides of each contour
+
+	vector<int> bit_map(32);
 
 	int mark,A,B,C,top,right,bottom,median1,median2,outlier;
 	float AB,BC,CA, dist,slope, areat,arear,areab, large, padding;
@@ -81,12 +94,16 @@ int main ( int argc, char **argv )
 		qr_gray = Mat::zeros(100, 100, CV_8UC1);
 	   	qr_thres = Mat::zeros(100, 100, CV_8UC1);
 
+		warp_raw = Mat::zeros(400, 400, CV_8UC3);
+		warp_gr = Mat::zeros(400, 400, CV_8UC1);
+
 		circ_view = Mat::zeros(100, 100, CV_8UC3);
 
 		mask = Scalar(0,0,0);
 		maskOut = Scalar(0,0,0);
 		
-		capture >> image;						// Capture Image from Image Input
+		capture >> image_orig;						// Capture Image from Image Input
+		resize(image_orig, image, Size(), RESIZE_FACTOR, RESIZE_FACTOR);
 
 		cvtColor(image,gray,CV_RGB2GRAY);		// Convert Image captured from Image Input to GrayScale	
 		Canny(gray, edges, 100 , 200, 3);		// Apply Canny edge detection on the gray image
@@ -173,6 +190,27 @@ int main ( int argc, char **argv )
 			// Now that we have the orientation of the line formed median1 & median2 and we also have the position of the outlier w.r.t. the line
 			// Determine the 'right' and 'bottom' markers
 
+			Point2f pt4;
+			pt4.x = mc[median1].x + (mc[median2].x - mc[outlier].x);
+			pt4.y = mc[median1].y + (mc[median2].y - mc[outlier].y);
+
+			line(traces, mc[median1], pt4, Scalar(0, 255, 0), 1, 8, 0);
+			line(traces, mc[median2], pt4, Scalar(0, 255, 0), 1, 8, 0);
+
+			vector<Point2f> main_box;
+			main_box.push_back(mc[median1]);
+			main_box.push_back(mc[median2]);
+			main_box.push_back(mc[outlier]);
+			main_box.push_back(pt4);
+
+			// Rect main_bound(mc[median1], mc[median2], mc[outlier], pt4);
+			// main_bound = boundingRect(main_box);
+
+			// Size delta_rect(main_bound.height * 1.3, main_bound.width * 1.3);
+			// main_bound += delta_rect;
+			// rectangle(traces, mc[outlier], pt4, Scalar(100, 255, 0), 1, 8, 0);
+
+
 			if (align == 0)
 			{
 				bottom = median1;
@@ -205,8 +243,72 @@ int main ( int argc, char **argv )
 			}
 
 	
-			putText(traces, "1", mc[right], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-			putText(traces, "2", mc[bottom], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// putText(traces, "1", mc[right], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// putText(traces, "2", mc[bottom], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+
+			// putText(traces, "m1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// putText(traces, "m2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// putText(traces, "o", mc[outlier], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+
+
+			// Find point orientation
+			// if (mc[right].x + mc[right].y > mc[top])
+
+			// FS code transformations
+			vector<Point2f> fs_src, fs_dst;
+
+			fs_src.push_back(mc[right]);
+			fs_src.push_back(mc[top]);
+			fs_src.push_back(mc[bottom]);
+			fs_src.push_back(pt4);
+
+			fs_dst.push_back(Point2f(18.75, 188.75));
+			fs_dst.push_back(Point2f(188.75, 358.75));
+			fs_dst.push_back(Point2f(358.75, 188.75));
+			fs_dst.push_back(Point2f(188.75, 18.75));
+
+			Mat fs_warp;
+			fs_warp = getPerspectiveTransform(fs_src, fs_dst);
+			warpPerspective(image, warp_raw, fs_warp, Size(warp_raw.cols, warp_raw.rows));
+			cvtColor(warp_raw, warp_gr, CV_RGB2GRAY);
+
+
+			Rect pix_rect(Point2f(335, 236), Size(10, 10));
+			// rectangle(warp_gr, pix_rect, Scalar(255, 0, 0));
+			// pix_val = warp_gr.at<uchar>(Point2f(335, 236));
+
+			// circle(warp_gr, Point2f(190, 190), 150, Scalar(0, 0, 255), 2, 8, 0);
+			// circle(warp_gr, Point2f(190, 190), 180, Scalar(0, 255, 0), 2, 0, 0);
+
+
+			int counter = 0;
+			Point2f pixpoint;
+
+			while (counter < 2) {
+				pixpoint.x = 190 + 150 * cos(2 * PI / 24 * (counter + 1) + (2 * PI / 48));
+				pixpoint.y = 190 + 150 * sin(2 * PI / 24 * (counter + 1) + (2 * PI / 48));
+
+				circle(warp_gr, pixpoint, 8, Scalar(0, 255, 0), 4, 8, 0);
+
+				pix_val = (pix_val << (counter - 8) | (warp_gr.at<uchar>(pixpoint) < 10 ? 0 : 1));
+
+				int value = warp_gr.at<uchar>(pixpoint);
+				// cout << "Value at point (" << pixpoint.x << ", " << pixpoint.y << "): " << value << endl;
+				// bit_map[counter - 8] = warp_gr.at<uchar>(pixpoint) < 10 ? 0 : 1;
+
+				counter++;
+			}
+
+			// cout.flush();
+
+
+			ostringstream pixbuf;
+			pixbuf << "Pixel value: " << pix_val;
+			putText(warp_gr, pixbuf.str(), Point(20,45), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+
+			imshow("Mapped", warp_gr);
+
+
 			
 			// To ensure any unintended values do not sneak up when QR code is not present
 			float area_top,area_right, area_bottom;
@@ -225,7 +327,7 @@ int main ( int argc, char **argv )
 			circle(mask, mid, ccrad, Scalar(255,255,255), -1);
 			bitwise_and(image, image, maskOut, mask);
 
-			Mat cropped;
+			Mat cropped(100, 100, CV_8UC3);
 			cropped = Scalar(0,0,0);
 
 			// Get slope of hypotenus mid to outlier point
@@ -252,28 +354,28 @@ int main ( int argc, char **argv )
 			buf3 << " | Midpoint: (" << mid.x << ", " << mid.y << ")";
 			putText(traces, buf3.str(), Point(20,75), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
 
+
 			circle(traces, mid, 5, Scalar(0,0,255), -1);
 
-			// if (slope < 0 && dist < 0) {
-				// putText(traces, "1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-				// putText(traces, "2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-			// } else if (slope < 0 && dist > 0) {
-				// putText(traces, "1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-				// putText(traces, "2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-			// } else if (slope > 0 && dist < 0) {
-				// putText(traces, "1", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-				// putText(traces, "2", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-			// } else {
-				// putText(traces, "2", mc[median1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
-				// putText(traces, "1", mc[median2], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			// FIXME -- keeps crashing
+			// if (mid.x - ccrad > 0 && mid.y - ccrad > 0) {
+				// Rect r_crop(mid.x - ccrad, mid.y - ccrad, ccrad * 2, ccrad * 2);
+				// Mat cropped_ref(maskOut, r_crop);
+				// cropped_ref.copyTo(cropped);
 			// }
+			// imshow ( "Cropped", cropped );
 
-			if (mid.x - ccrad >= 0 && mid.y - ccrad >= 0) {
-				Rect r_crop(mid.x - ccrad, mid.y - ccrad, ccrad * 2, ccrad * 2);
-				Mat cropped_ref(maskOut, r_crop);
-				cropped_ref.copyTo(cropped);
-				imshow ( "Cropped", cropped );
-			}
+
+			// TODO get 4th point
+			// dist * -2 away from outlier point
+			pt4.x = mc[top].x + (mc[bottom].x - mc[top].x);
+			pt4.y = mc[top].x + (mc[bottom].y - mc[top].y);
+
+			// bool flag = getIntersectionPoint(mc[top], mc[bottom], mc[top], mc[right], pt4);
+
+			// line(traces, mc[right], pt4, Scalar(100, 100, 100), 1, 8, 0);
+
+			// vector<Point2f> xformSrc, xformDst;
 
 			// TODO:
 			// - Get the four corners of the circle image
@@ -301,6 +403,8 @@ int main ( int argc, char **argv )
 				cv_updateCornerOr(orientation, tempM, M); 			// Re-arrange marker corners w.r.t orientation of the QR code
 				cv_updateCornerOr(orientation, tempO, O); 			// Re-arrange marker corners w.r.t orientation of the QR code
 
+				
+
 				int iflag = getIntersectionPoint(M[1],M[2],O[3],O[2],N);
 
 			
@@ -308,6 +412,10 @@ int main ( int argc, char **argv )
 				src.push_back(M[1]);
 				src.push_back(N);
 				src.push_back(O[3]);
+
+				putText(traces, "L", src[0], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+				putText(traces, "M", src[1], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+				putText(traces, "O", src[3], FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
 	
 				dst.push_back(Point2f(0,0));
 				dst.push_back(Point2f(qr.cols,0));
