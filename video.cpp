@@ -7,6 +7,8 @@
 #include <iostream>
 #include <sstream>
 #include <cmath>
+#include <inttypes.h>
+#include <bitset>
 
 #define PI 3.14159265358979323846
 
@@ -69,7 +71,7 @@ int main ( int argc, char **argv )
 
 	Mat warp_raw, warp_gr;
 
-	int pix_val;
+	uint32_t pix_val;
 	    
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
@@ -281,30 +283,50 @@ int main ( int argc, char **argv )
 			// circle(warp_gr, Point2f(190, 190), 180, Scalar(0, 255, 0), 2, 0, 0);
 
 
-			int counter = 0;
+			int counter = 23, ctr2 = 15;
 			Point2f pixpoint;
+			ostringstream pixbuf;
+			pix_val = 0;
+			vector<int> pixvals;
 
-			while (counter < 2) {
+			bitset<32> bts;
+
+			while (counter >= 0) {
 				pixpoint.x = 190 + 150 * cos(2 * PI / 24 * (counter + 1) + (2 * PI / 48));
 				pixpoint.y = 190 + 150 * sin(2 * PI / 24 * (counter + 1) + (2 * PI / 48));
 
-				circle(warp_gr, pixpoint, 8, Scalar(0, 255, 0), 4, 8, 0);
+				if (counter == 0 || !(((counter + 2) % 6 == 0 || (counter + 1) % 6 == 0))){
+					Scalar color = (warp_gr.at<uchar>(pixpoint) < 10 ? Scalar(255, 255, 255) : Scalar(0, 0, 0) );
+					circle(warp_gr, pixpoint, 8, color, 4, 8, 0);
+					if (warp_gr.at<uchar>(pixpoint) < 10) bts.set(ctr2);
 
-				pix_val = (pix_val << (counter - 8) | (warp_gr.at<uchar>(pixpoint) < 10 ? 0 : 1));
+					ctr2--;
+				}
 
-				int value = warp_gr.at<uchar>(pixpoint);
-				// cout << "Value at point (" << pixpoint.x << ", " << pixpoint.y << "): " << value << endl;
-				// bit_map[counter - 8] = warp_gr.at<uchar>(pixpoint) < 10 ? 0 : 1;
-
-				counter++;
+				counter--;
 			}
 
+			counter = 23;
+			ctr2 = 15;
+
+			while (counter >= 0) {
+				pixpoint.x = 190 + 180 * cos(2 * PI / 24 * (counter + 1) + (2 * PI / 48));
+				pixpoint.y = 190 + 180 * sin(2 * PI / 24 * (counter + 1) + (2 * PI / 48));
+
+				if (counter == 0 || !(((counter + 2) % 6 == 0 || (counter + 1) % 6 == 0))){
+					Scalar color = (warp_gr.at<uchar>(pixpoint) < 10 ? Scalar(255, 255, 255) : Scalar(0, 0, 0) );
+					circle(warp_gr, pixpoint, 8, color, 4, 8, 0);
+					if (warp_gr.at<uchar>(pixpoint) < 10) bts.set(ctr2 + 16);
+					ctr2--;
+				}
+
+				counter--;
+			}
 			// cout.flush();
 
 
-			ostringstream pixbuf;
-			pixbuf << "Pixel value: " << pix_val;
-			putText(warp_gr, pixbuf.str(), Point(20,45), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
+			pixbuf << bts.to_ulong();
+			putText(warp_gr, pixbuf.str(), Point(10, 380), FONT_HERSHEY_PLAIN, 1, Scalar(0, 255, 0), 1, 8);
 
 			imshow("Mapped", warp_gr);
 
