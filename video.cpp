@@ -5,6 +5,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <stdlib.h>
 #include <sstream>
 #include <cmath>
 #include <inttypes.h>
@@ -37,6 +38,19 @@ int main ( int argc, char **argv )
 {
 
 	VideoCapture capture(1);
+	string resStr;
+	if (argc > 2) {
+		int height = atoi(argv[1]);
+		int width = atoi(argv[2]);
+		capture.set(3, width);
+		capture.set(4, height);
+
+		resStr.append(argv[1]);
+		resStr.append("x");
+		resStr.append(argv[2]);
+	} else {
+		resStr = "full";
+	}
 
 	//Mat image = imread(argv[1]);
 	Mat image_orig;
@@ -56,9 +70,11 @@ int main ( int argc, char **argv )
 	
 	Mat image;
 
-	resize(image_orig, image, Size(), RESIZE_FACTOR, RESIZE_FACTOR);
+	// resize(image_orig, image, Size(), RESIZE_FACTOR, RESIZE_FACTOR);
+  image_orig.copyTo(image);
 
 	// Creation of Intermediate 'Image' Objects required later
+	Mat gray0(image.size(), CV_MAKETYPE(image.depth(), 1));			// To hold Grayscale Image
 	Mat gray(image.size(), CV_MAKETYPE(image.depth(), 1));			// To hold Grayscale Image
 	Mat edges(image.size(), CV_MAKETYPE(image.depth(), 1));			// To hold Grayscale Image
 	Mat traces(image.size(), CV_8UC3);								// For Debug Visuals
@@ -105,13 +121,21 @@ int main ( int argc, char **argv )
 		maskOut = Scalar(0,0,0);
 		
 		capture >> image_orig;						// Capture Image from Image Input
-		resize(image_orig, image, Size(), RESIZE_FACTOR, RESIZE_FACTOR);
+		// resize(image_orig, image, Size(), RESIZE_FACTOR, RESIZE_FACTOR);
+		image_orig.copyTo(image);
 
-		cvtColor(image,gray,CV_RGB2GRAY);		// Convert Image captured from Image Input to GrayScale	
-		Canny(gray, edges, 100 , 200, 3);		// Apply Canny edge detection on the gray image
+		cvtColor(image,gray0,CV_RGB2GRAY);		// Convert Image captured from Image Input to GrayScale	
+		// ADD BLUR
+		// GaussianBlur(gray0, gray, Size(11, 11), 0);
+		// blur(gray0, gray, Size(5, 5));
+		// medianBlur(gray0, gray, 5);
+		bilateralFilter(gray0, gray, 9,150,150);
+	  imshow("Blur", gray);
+		Canny(gray0, edges, 100 , 200, 3);		// Apply Canny edge detection on the gray image
 
 
 		findContours( edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE); // Find contours with hierarchy
+
 
 		mark = 0;								// Reset all detected marker count for this frame
 
@@ -119,9 +143,11 @@ int main ( int argc, char **argv )
 		vector<Moments> mu(contours.size());
   		vector<Point2f> mc(contours.size());
 
-		for( int i = 0; i < contours.size(); i++ )
-		{	mu[i] = moments( contours[i], false ); 
+		for ( int i = 0; i < contours.size(); i++ ) {
+			mu[i] = moments( contours[i], false ); 
 			mc[i] = Point2f( mu[i].m10/mu[i].m00 , mu[i].m01/mu[i].m00 );
+
+			// drawContours(image, contours, i, Scalar(100, 255, 100), 2);
 		}
 
 
@@ -149,6 +175,7 @@ int main ( int argc, char **argv )
 				if(hierarchy[k][2] != -1)
 				c = c+1;
 	
+				// drawContours(image, contours, i, Scalar(200, 100, 100));
 				if (c >= 5)
 				{	
 					if (mark == 0)		A = i;
@@ -160,6 +187,7 @@ int main ( int argc, char **argv )
 		} 
 
 		
+		// FIXME back to 3
 		if (mark >= 3)		// Ensure we have (atleast 3; namely A,B,C) 'Alignment Markers' discovered
 		{
 			// We have found the 3 markers for the QR code; Now we need to determine which of them are 'top', 'right' and 'bottom' markers
