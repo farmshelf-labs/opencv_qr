@@ -1,3 +1,5 @@
+**DEPRECATED: see https://github.com/farmshelf-labs/PodcodeDetector**
+
 ##### OpenCV: QR Code detection and extraction
 QR Code detection and extraction using OpenCV [click here](http://dsynflo.blogspot.in/2014/10/opencv-qr-code-detection-and-extraction.html)
 ##### Instructions
